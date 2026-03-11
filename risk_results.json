@@ -1,0 +1,99 @@
+{
+  "results": [
+    {
+      "name": "Unknown",
+      "expected": {
+        "score": 9.4,
+        "priority": "Critical"
+      },
+      "real": {
+        "score": 9.4,
+        "priority": "Critical"
+      },
+      "match": true,
+      "breakdown": {
+        "ml_confidence_component": 3.8,
+        "rank_component": 2.0,
+        "deployment_component": 1.6,
+        "severity_component": 2.0,
+        "keyword_hits": 4
+      }
+    },
+    {
+      "name": "Unknown",
+      "expected": {
+        "score": 3.9,
+        "priority": "Medium"
+      },
+      "real": {
+        "score": 3.9,
+        "priority": "Medium"
+      },
+      "match": true,
+      "breakdown": {
+        "ml_confidence_component": 3.4,
+        "rank_component": 0.12,
+        "deployment_component": 0.4,
+        "severity_component": 0.0,
+        "keyword_hits": 0
+      }
+    },
+    {
+      "name": "Unknown",
+      "expected": {
+        "score": 1.4,
+        "priority": "Low"
+      },
+      "real": {
+        "score": 1.4,
+        "priority": "Low"
+      },
+      "match": true,
+      "breakdown": {
+        "ml_confidence_component": 0.04,
+        "rank_component": 1.0,
+        "deployment_component": 0.4,
+        "severity_component": 0.0,
+        "keyword_hits": 0
+      }
+    },
+    {
+      "name": "Unknown",
+      "expected": {
+        "score": 7.6,
+        "priority": "Critical"
+      },
+      "real": {
+        "score": 7.6,
+        "priority": "Critical"
+      },
+      "match": true,
+      "breakdown": {
+        "ml_confidence_component": 3.6,
+        "rank_component": 1.25,
+        "deployment_component": 1.6,
+        "severity_component": 1.2,
+        "keyword_hits": 0
+      }
+    },
+    {
+      "name": "Unknown",
+      "expected": {
+        "score": 6.6,
+        "priority": "High"
+      },
+      "real": {
+        "score": 6.6,
+        "priority": "High"
+      },
+      "match": true,
+      "breakdown": {
+        "ml_confidence_component": 3.2,
+        "rank_component": 1.5,
+        "deployment_component": 0.4,
+        "severity_component": 1.5,
+        "keyword_hits": 3
+      }
+    }
+  ]
+}

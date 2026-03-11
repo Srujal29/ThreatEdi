@@ -1,0 +1,29 @@
+ML MODEL ACCURACY TEST - Custom Army Threat Reports
+================================================================================
+
+ 1. [OK] Expected: Phishing         Got: Phishing         Conf: 0.950
+ 2. [OK] Expected: Ransomware       Got: Ransomware       Conf: 0.950
+ 3. [OK] Expected: DDoS             Got: DDoS             Conf: 0.950
+ 4. [OK] Expected: Malware          Got: Malware          Conf: 0.950
+ 5. [OK] Expected: attack-pattern   Got: attack-pattern   Conf: 0.950
+ 6. [OK] Expected: threat-actor     Got: threat-actor     Conf: 0.950
+ 7. [OK] Expected: vulnerability    Got: vulnerability    Conf: 0.950
+ 8. [OK] Expected: Malware          Got: Malware          Conf: 0.950
+ 9. [OK] Expected: Phishing         Got: Phishing         Conf: 0.950
+10. [OK] Expected: Ransomware       Got: Ransomware       Conf: 0.950
+11. [OK] Expected: DDoS             Got: DDoS             Conf: 0.950
+12. [OK] Expected: Malware          Got: Malware          Conf: 0.950
+13. [OK] Expected: attack-pattern   Got: attack-pattern   Conf: 0.950
+14. [OK] Expected: benign           Got: benign           Conf: 0.456
+15. [OK] Expected: benign           Got: benign           Conf: 0.459
+16. [OK] Expected: vulnerability    Got: vulnerability    Conf: 0.950
+17. [XX] Expected: Phishing         Got: benign           Conf: 0.308
+          Top-3: benign(0.31), threat-actor(0.10), attack-pattern(0.09)
+18. [OK] Expected: Malware          Got: Malware          Conf: 0.950
+19. [OK] Expected: DDoS             Got: DDoS             Conf: 0.950
+20. [XX] Expected: Malware          Got: benign           Conf: 0.147
+          Top-3: benign(0.15), malware(0.11), attack-pattern(0.10)
+
+================================================================================
+ACCURACY: 18/20 = 90.0%
+Correct: 18 | Wrong: 2
