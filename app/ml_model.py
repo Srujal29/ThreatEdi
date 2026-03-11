@@ -1,8 +1,3 @@
-# =============================================================
-# ML MODEL — Threat Classification Pipeline
-# =============================================================
-# Refactored from fast.ipynb + improved_cells.py
-# Uses TF-IDF + domain-specific features + VotingClassifier
 import os
 import re
 import json
@@ -20,10 +15,8 @@ from sklearn.metrics import classification_report, accuracy_score
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 
-# Where to save/load trained model artifacts
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
 
-# Domain-specific regex patterns for feature extraction
 PATTERNS = {
     "has_ip": r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
     "has_hash": r"\b[a-fA-F0-9]{32,64}\b",
@@ -35,26 +28,21 @@ PATTERNS = {
     "has_cve": r"CVE-\d{4}-\d+",
 }
 
-# Globals loaded at runtime
 _tfidf = None
 _label_encoder = None
 _model = None
 _domain_feature_names = None
 
-
 def _extract_domain_features_single(text: str) -> list:
-    """Extract domain-specific numeric features from a single text string."""
     features = []
     for pattern in PATTERNS.values():
         features.append(1 if re.search(pattern, text) else 0)
-    features.append(len(text))                                           # text_length
-    features.append(len(text.split()))                                   # word_count
-    features.append(sum(1 for c in text if c.isupper()) / max(len(text), 1))  # upper_ratio
+    features.append(len(text))                                           
+    features.append(len(text.split()))                                   
+    features.append(sum(1 for c in text if c.isupper()) / max(len(text), 1))  
     return features
 
-
 def _extract_domain_features_df(df: pd.DataFrame) -> csr_matrix:
-    """Extract domain features for an entire DataFrame."""
     text_col = df["text_data"]
 
     feature_cols = {}
@@ -70,25 +58,12 @@ def _extract_domain_features_df(df: pd.DataFrame) -> csr_matrix:
     feature_df = pd.DataFrame(feature_cols)
     return csr_matrix(feature_df.values), list(feature_df.columns)
 
-
-# =====================================================================
-# TRAINING
-# =====================================================================
 def train_model(data_dir: str = None):
-    """
-    Train the threat classification model using JSONL data.
-    Also incorporates the CSV dataset if available.
-
-    Args:
-        data_dir: directory containing train.jsonl, test.jsonl, and optionally
-                  Cybersecurity_Dataset.csv
-    """
     global _tfidf, _label_encoder, _model, _domain_feature_names
 
     if data_dir is None:
         data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # --- Load JSONL data ---
     def load_jsonl(path):
         data = []
         with open(path, "r", encoding="utf-8") as f:
@@ -112,15 +87,11 @@ def train_model(data_dir: str = None):
     df_jsonl["Threat Category"] = df_jsonl["entities"].apply(extract_label)
     df_jsonl["text_data"] = df_jsonl["text"].fillna("no description")
 
-    # --- Load CSV data (if exists) ---
-    # CSV data has natural-language descriptions that better match real army reports
-    # so we duplicate it 3x to give it more influence during training
     csv_path = os.path.join(data_dir, "Cybersecurity_Dataset.csv")
     if os.path.exists(csv_path):
         df_csv = pd.read_csv(csv_path)
         df_csv["text_data"] = df_csv["Cleaned Threat Description"].fillna("no description")
         df_csv_slim = df_csv[["Threat Category", "text_data"]].copy()
-        # Triple the CSV data — it better represents how army users actually write
         df_csv_boosted = pd.concat([df_csv_slim] * 3, ignore_index=True)
         df_all = pd.concat(
             [df_jsonl[["Threat Category", "text_data"]], df_csv_boosted],
@@ -131,7 +102,6 @@ def train_model(data_dir: str = None):
         df_all = df_jsonl[["Threat Category", "text_data"]].copy()
         print(f"JSONL data only: {len(df_all)} samples")
 
-    # --- Feature extraction ---
     tfidf = TfidfVectorizer(
         max_features=5000,
         ngram_range=(1, 3),
@@ -149,14 +119,10 @@ def train_model(data_dir: str = None):
     print(f"  TF-IDF: {X_tfidf.shape[1]} | Domain: {X_domain.shape[1]}")
     print(f"Classes ({len(le.classes_)}): {le.classes_.tolist()}")
 
-    # --- Split ---
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # --- THE SECRET FROM fast.ipynb ---
-    # Only oversample the very small classes (< 50) up to 50. 
-    # NO undersampling - keep default distribution.
     from collections import Counter
     class_counts = Counter(y_train)
     over_strategy = {cls: max(count, 50) for cls, count in class_counts.items()}
@@ -164,7 +130,6 @@ def train_model(data_dir: str = None):
     smote = SMOTE(sampling_strategy=over_strategy, k_neighbors=1, random_state=42)
     X_res, y_res = smote.fit_resample(X_train, y_train)
 
-    # --- Train VotingClassifier ---
     print("\nTraining Hybrid Model (XGBoost + RandomForest)...")
     xgb = XGBClassifier(
         n_estimators=200, learning_rate=0.1, max_depth=6,
@@ -180,13 +145,11 @@ def train_model(data_dir: str = None):
     )
     model.fit(X_res, y_res)
 
-    # --- Evaluate ---
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     print(f"\n Model trained - Accuracy: {acc * 100:.2f}%")
     print(classification_report(y_test, y_pred, target_names=le.classes_, zero_division=0))
 
-    # --- Save ---
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(model, os.path.join(MODEL_DIR, "threat_classifier.joblib"))
     joblib.dump(tfidf, os.path.join(MODEL_DIR, "tfidf_vectorizer.joblib"))
@@ -194,7 +157,6 @@ def train_model(data_dir: str = None):
     joblib.dump(domain_feature_names, os.path.join(MODEL_DIR, "domain_features.joblib"))
     print(f" Model saved to {MODEL_DIR}/")
 
-    # Set globals
     _tfidf = tfidf
     _label_encoder = le
     _model = model
@@ -202,16 +164,11 @@ def train_model(data_dir: str = None):
 
     return acc
 
-
-# =====================================================================
-# LOADING
-# =====================================================================
 def load_model():
-    """Load trained model artifacts from disk."""
     global _tfidf, _label_encoder, _model, _domain_feature_names
 
     if _model is not None:
-        return True  # Already loaded
+        return True  
 
     model_path = os.path.join(MODEL_DIR, "threat_classifier.joblib")
     if not os.path.exists(model_path):
@@ -225,19 +182,7 @@ def load_model():
     print(f" Model loaded from {MODEL_DIR}/")
     return True
 
-
-# =====================================================================
-# PREDICTION
-# =====================================================================
 def predict(text: str) -> dict:
-    """
-    Classify a threat report text.
-    Uses a hybrid approach: strong heuristic keyword matching (for army reports)
-    backed by the trained ML model.
-
-    Returns:
-        dict with: category, confidence, all_probabilities
-    """
     if _model is None:
         if not load_model():
             raise RuntimeError(
@@ -246,11 +191,6 @@ def predict(text: str) -> dict:
 
     text_lower = text.lower()
     
-    # ---------------------------------------------------------
-    # 1. HEURISTIC / KEYWORD LAYER (Modeled after original triage)
-    # ---------------------------------------------------------
-    # The ML model is heavily trained on JSONL system logs/NER tags.
-    # For natural language army reports, explicit keywords should take priority.
     manual_category = None
     
     if "phishing" in text_lower or "fake login" in text_lower:
@@ -270,49 +210,35 @@ def predict(text: str) -> dict:
     elif re.search(r'\b[a-fA-F0-9]{64}\b', text):
         manual_category = "SHA2"
 
-    # ---------------------------------------------------------
-    # 2. ML CLASSIFICATION LAYER
-    # ---------------------------------------------------------
-    # TF-IDF features
     vec_tfidf = _tfidf.transform([text])
 
-    # Domain features
     domain_vals = _extract_domain_features_single(text)
     vec_domain = csr_matrix([domain_vals])
 
-    # Combined
     vec = hstack([vec_tfidf, vec_domain])
 
-    # Predict
     probs = _model.predict_proba(vec)[0]
     predicted_idx = np.argmax(probs)
     ml_category = _label_encoder.classes_[predicted_idx]
     ml_confidence = float(probs[predicted_idx])
 
-    # Top 3 predictions from ML
     top3_idx = np.argsort(probs)[-3:][::-1]
     top3 = [
         {"category": _label_encoder.classes_[i], "confidence": round(float(probs[i]), 4)}
         for i in top3_idx
     ]
 
-    # ---------------------------------------------------------
-    # 3. FINAL DECISION
-    # ---------------------------------------------------------
-    # If the keyword heuristic found a strong match, we use it with high confidence (0.95)
-    # UNLESS the ML model also predicted the exact same thing with even higher confidence.
     if manual_category:
         if ml_category.lower() == manual_category.lower() and ml_confidence > 0.95:
             final_category = ml_category
             final_confidence = ml_confidence
         else:
             final_category = manual_category
-            final_confidence = 0.95  # Heuristic override
+            final_confidence = 0.95  
             
-            # Inject the manual category into the top3 if it's not there
             if not any(x["category"].lower() == final_category.lower() for x in top3):
                 top3.insert(0, {"category": final_category, "confidence": 0.95})
-                top3.pop() # Keep it at length 3
+                top3.pop() 
     else:
         final_category = ml_category
         final_confidence = ml_confidence
@@ -321,13 +247,11 @@ def predict(text: str) -> dict:
         "category": final_category,
         "confidence": round(final_confidence, 4),
         "top_predictions": top3,
-        "ml_raw_category": ml_category,           # For debugging/transparency
+        "ml_raw_category": ml_category,           
         "ml_raw_confidence": round(ml_confidence, 4)
     }
 
-
 def get_categories() -> list:
-    """Return list of all known threat categories."""
     if _label_encoder is None:
         load_model()
     return _label_encoder.classes_.tolist() if _label_encoder else []

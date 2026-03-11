@@ -1,20 +1,6 @@
-# =============================================================
-# STANDALONE TRAINING SCRIPT
-# =============================================================
-# Run this to train the ML model before starting the FastAPI server.
-#
-# Usage:
-#   python run_training.py
-#
-# This will:
-#   1. Load train.jsonl + test.jsonl (+ Cybersecurity_Dataset.csv if present)
-#   2. Train a VotingClassifier (XGBoost + RandomForest)
-#   3. Save model artifacts to models/
-# =============================================================
 import os
 import sys
 
-# Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.ml_model import train_model

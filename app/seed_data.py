@@ -1,11 +1,6 @@
-# =============================================================
-# SEED DATA — Populate DB with ranks, units, and playbooks
-# =============================================================
 from app.database import SessionLocal, Rank, Unit, MitigationPlaybook, init_db
 
-
 def seed_ranks(db):
-    """Indian Army ranks with hierarchy levels (higher = more senior)."""
     ranks = [
         ("Sepoy", 1),
         ("Lance Naik", 2),
@@ -29,9 +24,7 @@ def seed_ranks(db):
             db.add(Rank(rank_name=name, hierarchy_level=level))
     db.commit()
 
-
 def seed_units(db):
-    """Sample Indian Army units with deployment status."""
     units = [
         ("1st Armoured Division", "Hisar", False),
         ("4 PARA (Special Forces)", "Agra", True),
@@ -49,9 +42,7 @@ def seed_units(db):
             db.add(Unit(unit_name=name, base_location=location, is_active_deployment=active))
     db.commit()
 
-
 def seed_playbooks(db):
-    """Mitigation playbooks for each threat category."""
     playbooks = {
         "Phishing": [
             "Isolate affected email accounts immediately",
@@ -132,19 +123,16 @@ def seed_playbooks(db):
             db.add(MitigationPlaybook(incident_category=category, action_steps=steps))
     db.commit()
 
-
 def seed_all():
-    """Run all seeders."""
     init_db()
     db = SessionLocal()
     try:
         seed_ranks(db)
         seed_units(db)
         seed_playbooks(db)
-        print("✅ Database seeded successfully!")
+        print(" Database seeded successfully!")
     finally:
         db.close()
-
 
 if __name__ == "__main__":
     seed_all()

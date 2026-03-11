@@ -30,14 +30,13 @@ def calculate_expected(ml_category, ml_confidence, report_text, rank_hierarchy_l
     else: p = "Low"
     return total, p
 
-
 TEST_SCENARIOS = [
     {
         "name": "General on active deployment reporting Ransomware (Max Risk Profile)",
         "ml_category": "Ransomware",
         "ml_confidence": 0.95,
         "report_text": "wannacry ransomware attack detected on primary c2 server",
-        "rank_hierarchy_level": 16, # General
+        "rank_hierarchy_level": 16, 
         "is_active_deployment": True,
     },
     {
@@ -45,7 +44,7 @@ TEST_SCENARIOS = [
         "ml_category": "Phishing",
         "ml_confidence": 0.85,
         "report_text": "received a suspicious phishing email asking for login",
-        "rank_hierarchy_level": 1, # Sepoy
+        "rank_hierarchy_level": 1, 
         "is_active_deployment": False,
     },
     {
@@ -53,7 +52,7 @@ TEST_SCENARIOS = [
         "ml_category": "benign",
         "ml_confidence": 0.99,
         "report_text": "system backup completed normally",
-        "rank_hierarchy_level": 8, # Lieutenant
+        "rank_hierarchy_level": 8, 
         "is_active_deployment": False,
     },
     {
@@ -61,7 +60,7 @@ TEST_SCENARIOS = [
         "ml_category": "DDoS",
         "ml_confidence": 0.90,
         "report_text": "ddos flooding our unit network",
-        "rank_hierarchy_level": 10, # Major
+        "rank_hierarchy_level": 10, 
         "is_active_deployment": True,
     },
     {
@@ -69,7 +68,7 @@ TEST_SCENARIOS = [
         "ml_category": "threat-actor",
         "ml_confidence": 0.80,
         "report_text": "apt group spotted attempting data theft and exfiltration",
-        "rank_hierarchy_level": 12, # Colonel
+        "rank_hierarchy_level": 12, 
         "is_active_deployment": False,
     }
 ]
@@ -83,10 +82,8 @@ all_passed = True
 for i, scenario in enumerate(TEST_SCENARIOS, 1):
     name = scenario.pop("name")
     
-    # 1. Expected calculation manually computed to double-check
     exp_score, exp_priority = calculate_expected(**scenario)
     
-    # 2. Real calculation from risk_engine.py
     real_result = compute_risk_score(**scenario)
     real_score = real_result["risk_score"]
     real_priority = real_result["priority_level"]

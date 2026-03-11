@@ -1,12 +1,7 @@
-# =============================================================
-# PYDANTIC SCHEMAS — Request/Response Models for FastAPI
-# =============================================================
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
-
-# --------------- RANKS ---------------
 class RankOut(BaseModel):
     rank_id: int
     rank_name: str
@@ -15,8 +10,6 @@ class RankOut(BaseModel):
     class Config:
         from_attributes = True
 
-
-# --------------- UNITS ---------------
 class UnitOut(BaseModel):
     unit_id: int
     unit_name: str
@@ -26,8 +19,6 @@ class UnitOut(BaseModel):
     class Config:
         from_attributes = True
 
-
-# --------------- USERS ---------------
 class UserCreate(BaseModel):
     full_name: str
     email: str
@@ -35,7 +26,6 @@ class UserCreate(BaseModel):
     user_type: str = Field(default="Active", pattern="^(Active|Veteran|Family)$")
     rank_id: int
     unit_id: int
-
 
 class UserOut(BaseModel):
     user_id: str
@@ -51,13 +41,9 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
-
-# --------------- INCIDENTS ---------------
 class IncidentCreate(BaseModel):
-    """What the army user submits — just their ID and the threat report text."""
     user_id: str
     report_text: str
-
 
 class IncidentOut(BaseModel):
     incident_id: str
@@ -73,15 +59,11 @@ class IncidentOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class IncidentResponse(BaseModel):
-    """Full response after ML + Risk Engine processing."""
     incident: IncidentOut
     playbook: Optional[dict] = None
     risk_breakdown: Optional[dict] = None
 
-
-# --------------- PLAYBOOKS ---------------
 class PlaybookOut(BaseModel):
     category_id: int
     incident_category: str
