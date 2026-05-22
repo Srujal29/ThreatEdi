@@ -1,13 +1,13 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from app.mitigation_engine import generate_dynamic_mitigation
+from app.mitigation_engine import generate_dynamic_mitigation, analyze_evidence_with_gemini, fallback_classification
 
-from app.database import get_db, init_db, Rank, Unit, User, Incident, MitigationPlaybook
+from app.database import get_db, init_db, Rank, Unit, User, Incident, MitigationPlaybook, OTP
 from app.schemas import (
-    RankOut, UnitOut, UserCreate, UserOut,
+    RankOut, UnitOut, UserCreate, UserOut, UserInternalOut,
     IncidentCreate, IncidentOut, IncidentResponse,
-    PlaybookOut,
+    PlaybookOut, PredictRequest, GenerateOTPRequest, VerifyOTPRequest, UpdatePasswordRequest
 )
 from app.ml_model import predict, load_model, get_categories
 from app.risk_engine import compute_risk_score
@@ -57,6 +57,22 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(db_user)
     return db_user
 
+@app.get("/api/internal/users/email/{email}", response_model=UserInternalOut, tags=["Internal"])
+def get_user_by_email(email: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter_by(email=email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+@app.post("/api/internal/users", response_model=UserOut, tags=["Internal"])
+def create_internal_user(user_data: dict, db: Session = Depends(get_db)):
+    # Bypasses some checks for seeding
+    db_user = User(**user_data)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
 @app.get("/api/users/{user_id}", response_model=UserOut, tags=["Users"])
 def get_user(user_id: str, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(user_id=user_id).first()
@@ -81,6 +97,16 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
         ml_result = predict(incident_req.report_text)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+        
+    evidence_analysis = None
+    if incident_req.evidence_url:
+        evidence_analysis = analyze_evidence_with_gemini(incident_req.evidence_url)
+        
+    if ml_result["confidence"] < 0.70:
+        groq_category = fallback_classification(incident_req.report_text)
+        if groq_category != "Unknown":
+            ml_result["category"] = groq_category
+            ml_result["confidence"] = 0.99 
 
     risk_result = compute_risk_score(
         ml_category=ml_result["category"],
@@ -93,10 +119,12 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
     db_incident = Incident(
         user_id=user.user_id,
         report_text=incident_req.report_text,
+        evidence_url=incident_req.evidence_url,
         ml_category=ml_result["category"],
         ml_confidence=ml_result["confidence"],
         risk_score=risk_result["risk_score"],
         priority_level=risk_result["priority_level"],
+        evidence_analysis=evidence_analysis,
         status="Pending",
     )
     db.add(db_incident)
@@ -127,6 +155,37 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
             },
         },
     )
+
+@app.post("/api/ml/predict", tags=["ML Pipeline"])
+def predict_incident(req: PredictRequest):
+    try:
+        ml_result = predict(req.report_text)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    risk_result = compute_risk_score(
+        ml_category=ml_result["category"],
+        ml_confidence=ml_result["confidence"],
+        report_text=req.report_text,
+        rank_hierarchy_level=req.rank_level,
+        is_active_deployment=req.is_active_deployment,
+    )
+
+    playbook_data = generate_dynamic_mitigation(
+        category=ml_result["category"],
+        risk_score=risk_result["risk_score"],
+        priority_level=risk_result["priority_level"],
+        ml_confidence=ml_result["confidence"],
+        report_text=req.report_text,
+        rank_level=req.rank_level,
+        is_active_deployment=req.is_active_deployment,
+    )
+
+    return {
+        "ml_prediction": ml_result,
+        "risk_details": risk_result,
+        "playbook": playbook_data,
+    }
 
 @app.get("/api/incidents/{incident_id}", response_model=IncidentOut, tags=["Incidents"])
 def get_incident(incident_id: str, db: Session = Depends(get_db)):
@@ -192,3 +251,42 @@ def health_check():
         "service": "AI-Enabled Cyber Incident Portal",
         "version": "1.0.0",
     }
+
+import random
+from datetime import timedelta, datetime
+
+@app.post("/api/internal/otps", tags=["Internal"])
+def generate_otp(req: GenerateOTPRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    otp_code = str(random.randint(100000, 999999))
+    expires_at = datetime.utcnow() + timedelta(minutes=15)
+    
+    new_otp = OTP(user_email=req.email, otp_code=otp_code, expires_at=expires_at)
+    db.add(new_otp)
+    db.commit()
+    
+    return {"otp_code": otp_code}
+
+@app.post("/api/internal/otps/verify", tags=["Internal"])
+def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
+    otp = db.query(OTP).filter(OTP.user_email == req.email, OTP.otp_code == req.otp_code).order_by(OTP.id.desc()).first()
+    if not otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    
+    if otp.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP expired")
+        
+    return {"message": "OTP verified successfully"}
+
+@app.patch("/api/internal/users/password", tags=["Internal"])
+def update_password(req: UpdatePasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.password_hash = req.new_password_hash
+    db.commit()
+    return {"message": "Password updated successfully"}

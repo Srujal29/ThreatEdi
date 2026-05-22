@@ -41,9 +41,13 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+class UserInternalOut(UserOut):
+    password_hash: str
+
 class IncidentCreate(BaseModel):
     user_id: str
     report_text: str
+    evidence_url: Optional[str] = None
 
 class IncidentOut(BaseModel):
     incident_id: str
@@ -53,6 +57,7 @@ class IncidentOut(BaseModel):
     ml_confidence: Optional[float] = None
     risk_score: Optional[float] = None
     priority_level: Optional[str] = None
+    evidence_analysis: Optional[str] = None
     status: str
     timestamp: Optional[datetime] = None
 
@@ -71,3 +76,19 @@ class PlaybookOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PredictRequest(BaseModel):
+    report_text: str
+    rank_level: int = 1
+    is_active_deployment: bool = False
+
+class GenerateOTPRequest(BaseModel):
+    email: str
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp_code: str
+
+class UpdatePasswordRequest(BaseModel):
+    email: str
+    new_password_hash: str

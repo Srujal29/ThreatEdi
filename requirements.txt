@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+groq
+joblib
+scikit-learn
+pydantic
+python-dotenv
+imbalanced-learn
+numpy
+pandas

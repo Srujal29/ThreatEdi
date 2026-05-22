@@ -46,6 +46,7 @@ class User(Base):
     full_name = Column(String(200), nullable=False)
     email = Column(String(200), nullable=False, unique=True)
     service_number = Column(String(50), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
     user_type = Column(String(20), nullable=False, default="Active")  
     rank_id = Column(Integer, ForeignKey("ranks.rank_id"), nullable=False)
     unit_id = Column(Integer, ForeignKey("units.unit_id"), nullable=False)
@@ -60,14 +61,24 @@ class Incident(Base):
     incident_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.user_id"), nullable=False)
     report_text = Column(Text, nullable=False)
+    evidence_url = Column(String(500), nullable=True)
     ml_category = Column(String(100))
     ml_confidence = Column(Float)
     risk_score = Column(Float)
     priority_level = Column(String(20))  
+    evidence_analysis = Column(Text, nullable=True)
     status = Column(String(20), default="Pending")  
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="incidents")
+
+class OTP(Base):
+    __tablename__ = "otps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_email = Column(String(200), nullable=False)
+    otp_code = Column(String(10), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
 
 class MitigationPlaybook(Base):
     __tablename__ = "mitigation_playbooks"

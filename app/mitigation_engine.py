@@ -222,3 +222,70 @@ TASK:
             "action_steps": base_steps,
             "error": str(e),
         }
+
+import google.generativeai as genai
+import requests
+import json
+from io import BytesIO
+from PIL import Image
+
+def analyze_evidence_with_gemini(image_url: str) -> str:
+    """
+    Downloads the image from the given URL and uses Gemini Vision
+    to analyze the evidence.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return "Gemini API key not configured."
+    
+    genai.configure(api_key=api_key)
+    
+    try:
+        response = requests.get(image_url)
+        response.raise_for_status()
+        img = Image.open(BytesIO(response.content))
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        prompt = "Analyze this image which was submitted as evidence for a cybersecurity incident. Briefly describe what is visible and whether it confirms any malicious activity or anomalies."
+        result = model.generate_content([prompt, img])
+        return result.text.strip()
+    except Exception as e:
+        print(f"Gemini Vision error: {str(e)}")
+        return f"Failed to analyze evidence: {str(e)}"
+
+def fallback_classification(text: str) -> str:
+    """
+    Uses Groq to classify the incident when local model confidence is < 70%.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "Unknown"
+        
+    client = Groq(api_key=api_key)
+    
+    prompt = f"""
+    You are a cybersecurity expert. Classify the following incident report into EXACTLY ONE of these categories:
+    Phishing, Ransomware, DDoS, Malware, attack-pattern, threat-actor, vulnerability, identity, benign.
+    
+    Report: "{text}"
+    
+    Respond ONLY with the exact category name. Nothing else.
+    """
+    
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile",
+            temperature=0.0,
+            max_tokens=20,
+        )
+        cat = chat_completion.choices[0].message.content.strip()
+        
+        valid_cats = ["Phishing", "Ransomware", "DDoS", "Malware", "attack-pattern", "threat-actor", "vulnerability", "identity", "benign"]
+        for v in valid_cats:
+            if v.lower() in cat.lower():
+                return v
+        return cat
+    except Exception as e:
+        print(f"Groq Classification error: {str(e)}")
+        return "Unknown"
