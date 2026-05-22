@@ -26,7 +26,7 @@ async function seedUsers() {
                 email: 'jane.smith@army.mil',
                 service_number: 'SN-2002',
                 password_hash: passwordHash2,
-                user_type: 'Active',
+                user_type: 'Admin',
                 rank_id: 11, // Lieutenant Colonel
                 unit_id: 4, // 15 Corps
             }

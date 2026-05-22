@@ -70,7 +70,8 @@ DEFAULT_MITIGATION = [
 ]
 
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+api_key = os.getenv("GROQ_API_KEY")
+client = Groq(api_key=api_key) if api_key else None
 
 
 def get_base_playbook(category: str) -> List[str]:
@@ -101,24 +102,39 @@ def generate_dynamic_mitigation(
 
     base_steps = get_base_playbook(category)
 
+    if not client:
+        return {
+            "category": category,
+            "priority": priority_level,
+            "risk_score": risk_score,
+            "ml_confidence": ml_confidence,
+            "mode": "fallback_static",
+            "action_steps": base_steps,
+            "error": "Groq API key not configured.",
+        }
+
     prompt = f"""
 You are an expert cybersecurity incident response assistant for a defence cyber incident portal.
 
-Your job is to generate dynamic mitigation advice.
+Your job is to generate dynamic mitigation advice and infer the specific threat classification.
 
-STRICT RULES:
+STRICT FORMAT RULES:
+1. The first line of your response MUST be exactly: "INFERRED THREAT: <Specific Inferred Threat Category/Type>"
+   For example: "INFERRED THREAT: Server Scanning & Reconnaissance" or "INFERRED THREAT: Credential Harvesting Phishing".
+2. After the first line, leave a blank line.
+3. Then, list between 6 and 10 concise mitigation steps as bullet points.
+
+STRICT CONTENT RULES:
 - Use the approved mitigation steps provided below as the foundation.
 - NEVER contradict the approved steps.
 - Treat the ML classification as a supporting signal, NOT absolute truth.
 - If the incident report clearly contradicts the ML category, prioritize the actual incident narrative.
-- Infer the likely real threat from the user's report if necessary.
+- Infer the likely real threat from the user's report.
 - Expand mitigation based on the full incident context.
 - If the user already clicked/opened/shared credentials, adapt accordingly.
 - If the threat is critical, emphasize immediate escalation.
 - If active deployment is true, mention operational security implications.
 - If AI confidence is low, mention analyst/manual review.
-- Return ONLY bullet points.
-- Return between 6 and 10 concise mitigation steps.
 
 APPROVED BASE MITIGATION:
 {chr(10).join("- " + step for step in base_steps)}
@@ -133,14 +149,6 @@ Active Deployment: {is_active_deployment}
 
 USER INCIDENT REPORT:
 {report_text}
-
-TASK:
-1. Determine the most likely REAL cyber threat category from the incident narrative.
-2. Treat the ML category as a hint, not ground truth.
-3. Use the approved mitigation steps as the foundation.
-4. Add incident-specific mitigation actions.
-5. If credentials were shared, clicked links, downloaded files, or impersonation is involved, adapt accordingly.
-6. Mention the likely threat category in the first bullet.
 """
 
     try:
@@ -172,10 +180,25 @@ TASK:
         elif content.startswith("```"):
             content = content.replace("```", "").strip()
 
+        # Parse inferred threat type and steps
+        lines = [line.strip() for line in content.split("\n") if line.strip()]
+        inferred_threat = category.replace("-", " ").title() if category else "Unknown Threat"
+        steps = []
+
+        for line in lines:
+            if line.upper().startswith("INFERRED THREAT:"):
+                inferred_threat = line[len("INFERRED THREAT:"):].strip("*-•\"' ")
+            else:
+                cleaned_line = line.strip("*-• ")
+                if cleaned_line:
+                    steps.append(cleaned_line)
+
+        if not steps:
+            steps = base_steps
+
+        # Map inferred threat category to known categories for classification integrity
         effective_category = category
-
         content_lower = content.lower()
-
         known_categories = [
             "phishing",
             "malware",
@@ -194,17 +217,9 @@ TASK:
                 effective_category = cat
                 break
 
-        steps = [
-            line.strip("*-• ").strip()
-            for line in content.split("\n")
-            if line.strip()
-        ]
-
-        if not steps:
-            steps = base_steps
-
         return {
             "category": effective_category,
+            "inferred_threat_type": inferred_threat,
             "priority": priority_level,
             "risk_score": risk_score,
             "ml_confidence": ml_confidence,
@@ -215,6 +230,7 @@ TASK:
     except Exception as e:
         return {
             "category": category,
+            "inferred_threat_type": category.replace("-", " ").title() if category else "Unknown Threat",
             "priority": priority_level,
             "risk_score": risk_score,
             "ml_confidence": ml_confidence,

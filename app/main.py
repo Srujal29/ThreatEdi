@@ -1,3 +1,7 @@
+import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", ".env"))
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -66,7 +70,23 @@ def get_user_by_email(email: str, db: Session = Depends(get_db)):
 
 @app.post("/api/internal/users", response_model=UserOut, tags=["Internal"])
 def create_internal_user(user_data: dict, db: Session = Depends(get_db)):
-    # Bypasses some checks for seeding
+    # Check if user already exists by email
+    existing_user = db.query(User).filter_by(email=user_data.get("email")).first()
+    if existing_user:
+        for key, value in user_data.items():
+            if hasattr(existing_user, key):
+                setattr(existing_user, key, value)
+        db.commit()
+        db.refresh(existing_user)
+        return existing_user
+
+    # Check if service number is already registered
+    sn = user_data.get("service_number")
+    if sn:
+        existing_sn = db.query(User).filter_by(service_number=sn).first()
+        if existing_sn:
+            raise HTTPException(status_code=400, detail="Service number already registered")
+
     db_user = User(**user_data)
     db.add(db_user)
     db.commit()
@@ -90,8 +110,16 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
     if not user:
         raise HTTPException(status_code=404, detail="User not found. Register first via POST /api/users/")
 
-    rank = db.query(Rank).filter_by(rank_id=user.rank_id).first()
-    unit = db.query(Unit).filter_by(unit_id=user.unit_id).first()
+    rank_id = incident_req.rank_id if incident_req.rank_id is not None else user.rank_id
+    unit_id = incident_req.unit_id if incident_req.unit_id is not None else user.unit_id
+
+    rank = db.query(Rank).filter_by(rank_id=rank_id).first() if rank_id else None
+    if not rank:
+        rank = db.query(Rank).filter_by(rank_id=user.rank_id).first()
+        
+    unit = db.query(Unit).filter_by(unit_id=unit_id).first() if unit_id else None
+    if not unit:
+        unit = db.query(Unit).filter_by(unit_id=user.unit_id).first()
 
     try:
         ml_result = predict(incident_req.report_text)
@@ -116,21 +144,6 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
         is_active_deployment=unit.is_active_deployment if unit else False,
     )
 
-    db_incident = Incident(
-        user_id=user.user_id,
-        report_text=incident_req.report_text,
-        evidence_url=incident_req.evidence_url,
-        ml_category=ml_result["category"],
-        ml_confidence=ml_result["confidence"],
-        risk_score=risk_result["risk_score"],
-        priority_level=risk_result["priority_level"],
-        evidence_analysis=evidence_analysis,
-        status="Pending",
-    )
-    db.add(db_incident)
-    db.commit()
-    db.refresh(db_incident)
-
     playbook_data = generate_dynamic_mitigation(
         category=ml_result["category"],
         risk_score=risk_result["risk_score"],
@@ -140,6 +153,22 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
         rank_level=rank.hierarchy_level if rank else 1,
         is_active_deployment=unit.is_active_deployment if unit else False,
     )
+
+    db_incident = Incident(
+        user_id=user.user_id,
+        report_text=incident_req.report_text,
+        evidence_url=incident_req.evidence_url,
+        ml_category=ml_result["category"],
+        ml_confidence=ml_result["confidence"],
+        risk_score=risk_result["risk_score"],
+        priority_level=risk_result["priority_level"],
+        evidence_analysis=evidence_analysis,
+        inferred_threat_type=playbook_data.get("inferred_threat_type"),
+        status="Pending",
+    )
+    db.add(db_incident)
+    db.commit()
+    db.refresh(db_incident)
 
     return IncidentResponse(
         incident=IncidentOut.model_validate(db_incident),
@@ -192,7 +221,37 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
     incident = db.query(Incident).filter_by(incident_id=incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return incident
+    
+    # Reconstruct/fetch reporter context to compute dynamic breakdown
+    user = incident.user
+    rank = user.rank if user else None
+    unit = user.unit if user else None
+    
+    risk_result = compute_risk_score(
+        ml_category=incident.ml_category or "benign",
+        ml_confidence=incident.ml_confidence or 0.0,
+        report_text=incident.report_text or "",
+        rank_hierarchy_level=rank.hierarchy_level if rank else 1,
+        is_active_deployment=unit.is_active_deployment if unit else False,
+    )
+    
+    breakdown_data = {
+        "ml_prediction": {
+            "category": incident.ml_category,
+            "confidence": incident.ml_confidence,
+        },
+        "risk_details": risk_result,
+        "reporter_context": {
+            "rank": rank.rank_name if rank else "Unknown",
+            "rank_level": rank.hierarchy_level if rank else 0,
+            "unit": unit.unit_name if unit else "Unknown",
+            "is_active_deployment": unit.is_active_deployment if unit else False,
+        },
+    }
+    
+    out = IncidentOut.model_validate(incident)
+    out.risk_breakdown = breakdown_data
+    return out
 
 @app.get("/api/incidents/", response_model=List[IncidentOut], tags=["Incidents"])
 def list_incidents(

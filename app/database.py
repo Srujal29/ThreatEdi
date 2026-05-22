@@ -67,6 +67,7 @@ class Incident(Base):
     risk_score = Column(Float)
     priority_level = Column(String(20))  
     evidence_analysis = Column(Text, nullable=True)
+    inferred_threat_type = Column(String(200), nullable=True)
     status = Column(String(20), default="Pending")  
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
