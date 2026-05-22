@@ -1,4 +1,6 @@
 import json
+import os
+from groq import Groq
 from typing import List, Dict
 
 MITIGATION_PLAYBOOKS: Dict[str, List[str]] = {
@@ -67,34 +69,156 @@ DEFAULT_MITIGATION = [
     "Maintain strict OPSEC until the situation is resolved."
 ]
 
-def get_mitigation_steps(category: str) -> List[str]:
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+
+def get_base_playbook(category: str) -> List[str]:
     if not category:
         return DEFAULT_MITIGATION
-        
+
     cat_lower = category.lower()
-    
+
     if cat_lower in MITIGATION_PLAYBOOKS:
         return MITIGATION_PLAYBOOKS[cat_lower]
-        
+
     for key, steps in MITIGATION_PLAYBOOKS.items():
         if key in cat_lower:
             return steps
-            
+
     return DEFAULT_MITIGATION
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("  DEFENCE MITIGATION ENGINE TEST")
-    print("=" * 60)
-    
-    test_categories = ["phishing", "malware", "opsec_risk", "unknown_threat"]
-    
-    for cat in test_categories:
-        print(f"\n Threat Category: {cat.upper()}")
-        print("-" * 60)
-        
-        steps = get_mitigation_steps(cat)
-        for i, step in enumerate(steps, 1):
-            print(f"  {i}. {step}")
-            
-    print("\n" + "=" * 60)
+
+def generate_dynamic_mitigation(
+    category: str,
+    risk_score: float,
+    priority_level: str,
+    ml_confidence: float,
+    report_text: str,
+    rank_level: int,
+    is_active_deployment: bool,
+) -> Dict:
+
+    base_steps = get_base_playbook(category)
+
+    prompt = f"""
+You are an expert cybersecurity incident response assistant for a defence cyber incident portal.
+
+Your job is to generate dynamic mitigation advice.
+
+STRICT RULES:
+- Use the approved mitigation steps provided below as the foundation.
+- NEVER contradict the approved steps.
+- Treat the ML classification as a supporting signal, NOT absolute truth.
+- If the incident report clearly contradicts the ML category, prioritize the actual incident narrative.
+- Infer the likely real threat from the user's report if necessary.
+- Expand mitigation based on the full incident context.
+- If the user already clicked/opened/shared credentials, adapt accordingly.
+- If the threat is critical, emphasize immediate escalation.
+- If active deployment is true, mention operational security implications.
+- If AI confidence is low, mention analyst/manual review.
+- Return ONLY bullet points.
+- Return between 6 and 10 concise mitigation steps.
+
+APPROVED BASE MITIGATION:
+{chr(10).join("- " + step for step in base_steps)}
+
+INCIDENT CONTEXT:
+Threat Category: {category}
+Risk Score: {risk_score}/10
+Priority Level: {priority_level}
+ML Confidence: {ml_confidence}
+Rank Level: {rank_level}
+Active Deployment: {is_active_deployment}
+
+USER INCIDENT REPORT:
+{report_text}
+
+TASK:
+1. Determine the most likely REAL cyber threat category from the incident narrative.
+2. Treat the ML category as a hint, not ground truth.
+3. Use the approved mitigation steps as the foundation.
+4. Add incident-specific mitigation actions.
+5. If credentials were shared, clicked links, downloaded files, or impersonation is involved, adapt accordingly.
+6. Mention the likely threat category in the first bullet.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a cybersecurity mitigation expert."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.2,
+            max_tokens=500,
+        )
+
+        content = response.choices[0].message.content
+
+        if not content:
+            raise Exception("Groq returned empty response")
+
+        content = content.strip()
+
+        if content.startswith("```json"):
+            content = content.replace("```json", "").replace("```", "").strip()
+        elif content.startswith("```"):
+            content = content.replace("```", "").strip()
+
+        effective_category = category
+
+        content_lower = content.lower()
+
+        known_categories = [
+            "phishing",
+            "malware",
+            "ransomware",
+            "ddos",
+            "impersonation",
+            "opsec_risk",
+            "financial_fraud",
+            "attack-pattern",
+            "threat-actor",
+            "vulnerability"
+        ]
+
+        for cat in known_categories:
+            if cat in content_lower:
+                effective_category = cat
+                break
+
+        steps = [
+            line.strip("*-• ").strip()
+            for line in content.split("\n")
+            if line.strip()
+        ]
+
+        if not steps:
+            steps = base_steps
+
+        return {
+            "category": effective_category,
+            "priority": priority_level,
+            "risk_score": risk_score,
+            "ml_confidence": ml_confidence,
+            "mode": "ai_dynamic",
+            "action_steps": steps,
+        }
+
+    except Exception as e:
+        return {
+            "category": category,
+            "priority": priority_level,
+            "risk_score": risk_score,
+            "ml_confidence": ml_confidence,
+            "mode": "fallback_static",
+            "action_steps": base_steps,
+            "error": str(e),
+        }

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from app.mitigation_engine import generate_dynamic_mitigation
 
 from app.database import get_db, init_db, Rank, Unit, User, Incident, MitigationPlaybook
 from app.schemas import (
@@ -102,20 +103,15 @@ def report_incident(incident_req: IncidentCreate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(db_incident)
 
-    playbook = db.query(MitigationPlaybook).filter_by(
-        incident_category=ml_result["category"]
-    ).first()
-    if not playbook:
-        playbook = db.query(MitigationPlaybook).filter(
-            MitigationPlaybook.incident_category.ilike(ml_result["category"])
-        ).first()
-
-    playbook_data = None
-    if playbook:
-        playbook_data = {
-            "category": playbook.incident_category,
-            "action_steps": playbook.action_steps,
-        }
+    playbook_data = generate_dynamic_mitigation(
+        category=ml_result["category"],
+        risk_score=risk_result["risk_score"],
+        priority_level=risk_result["priority_level"],
+        ml_confidence=ml_result["confidence"],
+        report_text=incident_req.report_text,
+        rank_level=rank.hierarchy_level if rank else 1,
+        is_active_deployment=unit.is_active_deployment if unit else False,
+    )
 
     return IncidentResponse(
         incident=IncidentOut.model_validate(db_incident),
